@@ -4,8 +4,9 @@ from importlib import resources
 from typing import Any, Dict, List, Optional, TypedDict, cast
 
 import sqlalchemy as sa
+from sqlalchemy.engine import Engine
 import yaml
-from sqlalchemy import make_url
+from sqlalchemy.engine.url import make_url
 
 from dbos._serialization import Serializer
 
@@ -39,7 +40,7 @@ class DBOSConfig(TypedDict, total=False):
         executor_id (str): Executor ID, used to identify the application instance in distributed environments
         dbos_system_schema (str): Schema name for DBOS system tables. Defaults to "dbos".
         enable_otlp (bool): If True, enable built-in DBOS OTLP tracing and logging.
-        system_database_engine (sa.Engine): A custom system database engine. If provided, DBOS will not create an engine but use this instead.
+        system_database_engine (Engine): A custom system database engine. If provided, DBOS will not create an engine but use this instead.
         conductor_key (str): An API key for DBOS Conductor. Pass this in to connect your process to Conductor.
         conductor_url (str): The websockets URL for your DBOS Conductor service. Only set if you're self-hosting Conductor.
         serializer (Serializer): A custom serializer and deserializer DBOS uses when storing program data in the system database
@@ -66,7 +67,7 @@ class DBOSConfig(TypedDict, total=False):
     executor_id: Optional[str]
     dbos_system_schema: Optional[str]
     enable_otlp: Optional[bool]
-    system_database_engine: Optional[sa.Engine]
+    system_database_engine: Optional[Engine]
     conductor_key: Optional[str]
     conductor_url: Optional[str]
     serializer: Optional[Serializer]
@@ -125,7 +126,7 @@ class ConfigFile(TypedDict, total=False):
     system_database_url: Optional[str]
     telemetry: Optional[TelemetryConfig]
     env: Dict[str, str]
-    system_database_engine: Optional[sa.Engine]
+    system_database_engine: Optional[Engine]
     dbos_system_schema: Optional[str]
     use_listen_notify: bool
 

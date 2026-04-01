@@ -18,6 +18,7 @@ from typing import (
 )
 
 import sqlalchemy as sa
+from sqlalchemy.engine import Engine
 
 from dbos._context import MaxPriority, MinPriority
 from dbos._core import DEFAULT_POLLING_INTERVAL
@@ -140,7 +141,7 @@ class DBOSClient:
         database_url: Optional[str] = None,  # DEPRECATED
         *,
         system_database_url: Optional[str] = None,
-        system_database_engine: Optional[sa.Engine] = None,
+        system_database_engine: Optional[Engine] = None,
         application_database_url: Optional[str] = None,
         dbos_system_schema: Optional[str] = "dbos",
         serializer: Serializer = DefaultSerializer(),

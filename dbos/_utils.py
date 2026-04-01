@@ -3,7 +3,7 @@ import os
 import sys
 import uuid
 
-import psycopg
+import psycopg2
 from sqlalchemy.exc import DBAPIError
 
 INTERNAL_QUEUE_NAME = "_dbos_internal_queue"
@@ -28,9 +28,9 @@ def retriable_postgres_exception(e: Exception) -> bool:
         return False
     if e.connection_invalidated:
         return True
-    if isinstance(e.orig, psycopg.OperationalError):
-        driver_error: psycopg.OperationalError = e.orig
-        pgcode = driver_error.sqlstate or ""
+    if isinstance(e.orig, psycopg2.OperationalError):
+        driver_error: psycopg2.OperationalError = e.orig
+        pgcode = getattr(driver_error, "pgcode", "") or ""
         # Failure to establish connection
         if "connection failed" in str(driver_error):
             return True
@@ -38,7 +38,7 @@ def retriable_postgres_exception(e: Exception) -> bool:
         elif "server closed the connection unexpectedly" in str(driver_error):
             return True
         # Connection timeout
-        if isinstance(driver_error, psycopg.errors.ConnectionTimeout):
+        if "timeout expired" in str(driver_error):
             return True
         # Insufficient resources
         elif pgcode.startswith("53"):

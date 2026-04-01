@@ -9,6 +9,7 @@ from os import path
 from typing import Annotated, Any, List, Optional, Tuple
 
 import sqlalchemy as sa
+from sqlalchemy.engine.url import make_url
 import typer
 
 from dbos._context import SetWorkflowID
@@ -289,8 +290,8 @@ def migrate(
 
     typer.echo(f"Starting DBOS migrations")
     if application_database_url:
-        typer.echo(f"Application database: {sa.make_url(application_database_url)}")
-    typer.echo(f"System database: {sa.make_url(system_database_url)}")
+        typer.echo(f"Application database: {make_url(application_database_url)}")
+    typer.echo(f"System database: {make_url(system_database_url)}")
     if schema is None:
         schema = "dbos"
     typer.echo(f"DBOS system schema: {schema}")

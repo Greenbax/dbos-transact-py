@@ -1,6 +1,7 @@
 from typing import Optional
 
 import sqlalchemy as sa
+from sqlalchemy.engine.url import make_url
 import typer
 
 from dbos._app_db import ApplicationDatabase
@@ -83,12 +84,12 @@ def grant_dbos_schema_permissions(
     Grant all permissions on all entities in the system schema to the specified role.
     """
     typer.echo(
-        f"Granting permissions for the {schema} schema to {role_name} in database {sa.make_url(database_url)}"
+        f"Granting permissions for the {schema} schema to {role_name} in database {make_url(database_url)}"
     )
     engine = None
     try:
         engine = sa.create_engine(
-            sa.make_url(database_url).set(drivername="postgresql+psycopg")
+            make_url(database_url).set(drivername="postgresql+psycopg2")
         )
         with engine.connect() as connection:
             connection.execution_options(isolation_level="AUTOCOMMIT")

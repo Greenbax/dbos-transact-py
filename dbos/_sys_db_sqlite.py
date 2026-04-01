@@ -3,6 +3,7 @@ import time
 from typing import Any, Dict, Optional, Tuple
 
 import sqlalchemy as sa
+from sqlalchemy.engine import Connection, Engine, make_url
 from sqlalchemy import event
 from sqlalchemy.exc import DBAPIError
 
@@ -17,7 +18,7 @@ class SQLiteSystemDatabase(SystemDatabase):
 
     def _create_engine(
         self, system_database_url: str, engine_kwargs: Dict[str, Any]
-    ) -> sa.Engine:
+    ) -> Engine:
         """Create a SQLite engine."""
         sqlite_kwargs = engine_kwargs.copy()
         connect_args = sqlite_kwargs.get("connect_args", {})
@@ -122,7 +123,7 @@ class SQLiteSystemDatabase(SystemDatabase):
         """Reset the SQLite system database by deleting the database file."""
 
         # Parse the SQLite database URL to get the file path
-        url = sa.make_url(database_url)
+        url = make_url(database_url)
         db_path = url.database
 
         if db_path is None:

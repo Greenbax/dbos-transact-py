@@ -1,8 +1,12 @@
 import time
 from typing import Any, Dict, Optional, cast
 
-import psycopg
+import psycopg2
+import select
 import sqlalchemy as sa
+from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine.url import make_url
+from sqlalchemy.pool import _ConnectionFairy as PoolProxiedConnection
 from sqlalchemy.exc import DBAPIError
 
 from dbos._migration import ensure_dbos_schema, run_dbos_migrations
@@ -14,12 +18,12 @@ from ._sys_db import SystemDatabase
 class PostgresSystemDatabase(SystemDatabase):
     """PostgreSQL-specific implementation of SystemDatabase."""
 
-    notification_conn: Optional[sa.PoolProxiedConnection] = None
+    notification_conn: Optional[PoolProxiedConnection] = None
 
     def _create_engine(
         self, system_database_url: str, engine_kwargs: Dict[str, Any]
-    ) -> sa.Engine:
-        url = sa.make_url(system_database_url).set(drivername="postgresql+psycopg")
+    ) -> Engine:
+        url = make_url(system_database_url).set(drivername="postgresql+psycopg2")
         return sa.create_engine(url, **engine_kwargs)
 
     def run_migrations(self) -> None:
@@ -36,7 +40,7 @@ class PostgresSystemDatabase(SystemDatabase):
                     conn.execution_options(isolation_level="AUTOCOMMIT")
                     if not conn.execute(
                         sa.text("SELECT 1 FROM pg_database WHERE datname=:db_name"),
-                        parameters={"db_name": sysdb_name},
+                        {"db_name": sysdb_name},
                     ).scalar():
                         dbos_logger.info(f"Creating system database {sysdb_name}")
                         conn.execute(sa.text(f'CREATE DATABASE "{sysdb_name}"'))
@@ -95,7 +99,7 @@ class PostgresSystemDatabase(SystemDatabase):
     @staticmethod
     def _reset_system_database(database_url: str) -> None:
         """Reset the PostgreSQL system database by dropping it."""
-        system_db_url = sa.make_url(database_url)
+        system_db_url = make_url(database_url)
         sysdb_name = system_db_url.database
 
         if sysdb_name is None:
@@ -104,7 +108,7 @@ class PostgresSystemDatabase(SystemDatabase):
         try:
             # Connect to postgres default database
             engine = sa.create_engine(
-                system_db_url.set(database="postgres", drivername="postgresql+psycopg"),
+                system_db_url.set(database="postgres", drivername="postgresql+psycopg2"),
                 connect_args={"connect_timeout": 10},
             )
 
@@ -130,16 +134,19 @@ class PostgresSystemDatabase(SystemDatabase):
                 with self._listener_thread_lock:
                     self.notification_conn = self.engine.raw_connection()
                     self.notification_conn.detach()
-                    psycopg_conn = cast(
-                        psycopg.connection.Connection, self.notification_conn
-                    )
-                    psycopg_conn.set_autocommit(True)
+                    raw_conn = self.notification_conn.connection
+                    raw_conn.autocommit = True
 
-                    psycopg_conn.execute("LISTEN dbos_notifications_channel")
-                    psycopg_conn.execute("LISTEN dbos_workflow_events_channel")
+                    cursor = raw_conn.cursor()
+                    cursor.execute("LISTEN dbos_notifications_channel")
+                    cursor.execute("LISTEN dbos_workflow_events_channel")
+                    cursor.close()
                 while self._run_background_processes:
-                    gen = psycopg_conn.notifies()
-                    for notify in gen:
+                    if select.select([raw_conn], [], [], 5.0) == ([], [], []):
+                        continue
+                    raw_conn.poll()
+                    while raw_conn.notifies:
+                        notify = raw_conn.notifies.pop(0)
                         channel = notify.channel
                         dbos_logger.debug(
                             f"Received notification on channel: {channel}, payload: {notify.payload}"

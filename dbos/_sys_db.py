@@ -25,6 +25,8 @@ from typing import (
 )
 
 import sqlalchemy as sa
+from sqlalchemy.engine import Connection, Engine, make_url
+from sqlalchemy.sql.dml import Insert
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.sql import func
 
@@ -379,7 +381,7 @@ class SystemDatabase(ABC):
     def create(
         system_database_url: str,
         engine_kwargs: Dict[str, Any],
-        engine: Optional[sa.Engine],
+        engine: Optional[Engine],
         schema: Optional[str],
         serializer: Serializer,
         executor_id: Optional[str],
@@ -419,7 +421,7 @@ class SystemDatabase(ABC):
         *,
         system_database_url: str,
         engine_kwargs: Dict[str, Any],
-        engine: Optional[sa.Engine],
+        engine: Optional[Engine],
         schema: Optional[str],
         serializer: Serializer,
         executor_id: Optional[str],
@@ -433,7 +435,7 @@ class SystemDatabase(ABC):
         if engine:
             dbos_logger.info("Initializing DBOS system database with custom engine")
         else:
-            printable_sys_db_url = sa.make_url(system_database_url).render_as_string(
+            printable_sys_db_url = make_url(system_database_url).render_as_string(
                 hide_password=True
             )
             dbos_logger.info(
@@ -482,7 +484,7 @@ class SystemDatabase(ABC):
     @abstractmethod
     def _create_engine(
         self, system_database_url: str, engine_kwargs: Dict[str, Any]
-    ) -> sa.Engine:
+    ) -> Engine:
         """Create a database engine specific to the database type."""
         pass
 
@@ -505,7 +507,7 @@ class SystemDatabase(ABC):
     def _insert_workflow_status(
         self,
         status: WorkflowStatusInternal,
-        conn: sa.Connection,
+        conn: Connection,
         *,
         max_recovery_attempts: Optional[int],
         owner_xid: Optional[str],
@@ -1382,7 +1384,7 @@ class SystemDatabase(ABC):
         self,
         result: OperationResultInternal,
         completed_at_epoch_ms: int,
-        conn: sa.Connection,
+        conn: Connection,
     ) -> None:
         error = result["error"]
         output = result["output"]
@@ -1527,7 +1529,7 @@ class SystemDatabase(ABC):
         workflow_id: str,
         function_id: int,
         function_name: str,
-        conn: sa.Connection,
+        conn: Connection,
     ) -> Optional[RecordedResult]:
         # First query: Retrieve the workflow status
         workflow_status_sql = sa.select(
@@ -2725,7 +2727,7 @@ class SystemDatabase(ABC):
         key: str,
         serialized_value: Optional[str],
         serialization: Optional[str],
-    ) -> sa.Insert:
+    ) -> Insert:
         """Build an atomic INSERT...SELECT that computes the next stream offset."""
         return sa.insert(SystemSchema.streams).from_select(
             ["workflow_uuid", "function_id", "key", "value", "serialization", "offset"],
@@ -3388,9 +3390,9 @@ class SystemDatabase(ABC):
     # ── Schedule CRUD ─────────────────────────────────────────────
 
     def create_schedule(
-        self, schedule: WorkflowSchedule, conn: Optional[sa.Connection] = None
+        self, schedule: WorkflowSchedule, conn: Optional[Connection] = None
     ) -> None:
-        def _do(c: sa.Connection) -> None:
+        def _do(c: Connection) -> None:
             try:
                 c.execute(
                     sa.insert(SystemSchema.workflow_schedules).values(
@@ -3420,9 +3422,9 @@ class SystemDatabase(ABC):
         status: Optional[Union[str, List[str]]] = None,
         workflow_name: Optional[Union[str, List[str]]] = None,
         schedule_name_prefix: Optional[Union[str, List[str]]] = None,
-        conn: Optional[sa.Connection] = None,
+        conn: Optional[Connection] = None,
     ) -> List[WorkflowSchedule]:
-        def _do(c: sa.Connection) -> List[WorkflowSchedule]:
+        def _do(c: Connection) -> List[WorkflowSchedule]:
             query = sa.select(
                 SystemSchema.workflow_schedules.c.schedule_id,
                 SystemSchema.workflow_schedules.c.schedule_name,
@@ -3478,9 +3480,9 @@ class SystemDatabase(ABC):
             return _do(c)
 
     def get_schedule(
-        self, name: str, conn: Optional[sa.Connection] = None
+        self, name: str, conn: Optional[Connection] = None
     ) -> Optional[WorkflowSchedule]:
-        def _do(c: sa.Connection) -> Optional[WorkflowSchedule]:
+        def _do(c: Connection) -> Optional[WorkflowSchedule]:
             row = c.execute(
                 sa.select(
                     SystemSchema.workflow_schedules.c.schedule_id,
@@ -3510,9 +3512,9 @@ class SystemDatabase(ABC):
             return _do(c)
 
     def _set_schedule_status(
-        self, name: str, status: str, conn: Optional[sa.Connection] = None
+        self, name: str, status: str, conn: Optional[Connection] = None
     ) -> None:
-        def _do(c: sa.Connection) -> None:
+        def _do(c: Connection) -> None:
             c.execute(
                 sa.update(SystemSchema.workflow_schedules)
                 .where(SystemSchema.workflow_schedules.c.schedule_name == name)
@@ -3525,14 +3527,14 @@ class SystemDatabase(ABC):
             with self.engine.begin() as c:
                 _do(c)
 
-    def pause_schedule(self, name: str, conn: Optional[sa.Connection] = None) -> None:
+    def pause_schedule(self, name: str, conn: Optional[Connection] = None) -> None:
         self._set_schedule_status(name, "PAUSED", conn)
 
-    def resume_schedule(self, name: str, conn: Optional[sa.Connection] = None) -> None:
+    def resume_schedule(self, name: str, conn: Optional[Connection] = None) -> None:
         self._set_schedule_status(name, "ACTIVE", conn)
 
-    def delete_schedule(self, name: str, conn: Optional[sa.Connection] = None) -> None:
-        def _do(c: sa.Connection) -> None:
+    def delete_schedule(self, name: str, conn: Optional[Connection] = None) -> None:
+        def _do(c: Connection) -> None:
             c.execute(
                 sa.delete(SystemSchema.workflow_schedules).where(
                     SystemSchema.workflow_schedules.c.schedule_name == name
@@ -3615,7 +3617,7 @@ class SystemDatabase(ABC):
         workflow_uuid: str,
         function_id: int,
         function_name: str,
-        op: Callable[[sa.Connection], T],
+        op: Callable[[Connection], T],
     ) -> T:
         start_time = int(time.time() * 1000)
         with self.engine.begin() as c:

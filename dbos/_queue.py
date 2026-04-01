@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import copy
 import random
 import threading
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional, TypedDict
 
-from psycopg import errors
+import psycopg2
 from sqlalchemy.exc import OperationalError
 
 from dbos._context import DBOSContext, get_local_dbos_context
@@ -39,10 +41,10 @@ class Queue:
     def __init__(
         self,
         name: str,
-        concurrency: Optional[int] = None,
-        limiter: Optional[QueueRateLimit] = None,
+        concurrency: int | None = None,
+        limiter: QueueRateLimit | None = None,
         *,  # Disable positional arguments from here on
-        worker_concurrency: Optional[int] = None,
+        worker_concurrency: int | None = None,
         priority_enabled: bool = False,
         partition_queue: bool = False,
         polling_interval_sec: float = 1.0,
@@ -72,8 +74,8 @@ class Queue:
         registry.queue_info_map[self.name] = self
 
     def enqueue(
-        self, func: "Callable[P, R]", *args: P.args, **kwargs: P.kwargs
-    ) -> "WorkflowHandle[R]":
+        self, func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> WorkflowHandle[R]:
         from ._dbos import _get_dbos_instance
 
         context = get_local_dbos_context()
@@ -105,10 +107,10 @@ class Queue:
 
     async def enqueue_async(
         self,
-        func: "Callable[P, Coroutine[Any, Any, R]]",
+        func: Callable[P, Coroutine[Any, Any, R]],
         *args: P.args,
         **kwargs: P.kwargs,
-    ) -> "WorkflowHandleAsync[R]":
+    ) -> WorkflowHandleAsync[R]:
         from ._dbos import _get_dbos_instance
 
         dbos = _get_dbos_instance()
@@ -127,9 +129,7 @@ class Queue:
         )
 
 
-def queue_worker_thread(
-    stop_event: threading.Event, dbos: "DBOS", queue: Queue
-) -> None:
+def queue_worker_thread(stop_event: threading.Event, dbos: DBOS, queue: Queue) -> None:
     """Worker thread for processing a single queue."""
     polling_interval = queue.polling_interval_sec
     min_polling_interval = queue.polling_interval_sec
@@ -165,9 +165,9 @@ def queue_worker_thread(
                     except Exception as e:
                         dbos.logger.error(f"Error executing workflow {id}: {e}")
         except OperationalError as e:
-            if isinstance(
-                e.orig, (errors.SerializationFailure, errors.LockNotAvailable)
-            ):
+            if isinstance(e.orig, psycopg2.OperationalError) and getattr(
+                e.orig, "pgcode", ""
+            ) in ("40001", "55P03"):
                 # If a serialization error is encountered, increase the polling interval
                 polling_interval = min(
                     max_polling_interval,
@@ -191,7 +191,7 @@ def queue_worker_thread(
         polling_interval = max(min_polling_interval, polling_interval * 0.9)
 
 
-def queue_thread(stop_event: threading.Event, dbos: "DBOS") -> None:
+def queue_thread(stop_event: threading.Event, dbos: DBOS) -> None:
     """Main queue manager thread that spawns and monitors worker threads for each queue."""
     queue_threads: dict[str, threading.Thread] = {}
     # Check interval for monitoring queue registration changes

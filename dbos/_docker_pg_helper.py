@@ -4,7 +4,7 @@ import os
 import subprocess
 import time
 
-import psycopg
+import psycopg2
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 from typing import Any, Dict, Optional, Tuple
@@ -54,7 +54,7 @@ def start_docker_pg() -> None:
 def check_db_connectivity(config: Dict[str, Any]) -> Optional[Exception]:
     conn = None
     try:
-        conn = psycopg.connect(
+        conn = psycopg2.connect(
             host=config["host"],
             port=config["port"],
             user=config["user"],

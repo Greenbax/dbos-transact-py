@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, TypedDict
 
-import psycopg
+import psycopg2
 import sqlalchemy as sa
+from sqlalchemy.engine import Connection, Engine, make_url
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
@@ -69,7 +70,7 @@ class ApplicationDatabase(ABC):
         schema: Optional[str],
     ):
         # Log application database connection information
-        printable_url = sa.make_url(database_url).render_as_string(hide_password=True)
+        printable_url = make_url(database_url).render_as_string(hide_password=True)
         dbos_logger.info(
             f"Initializing DBOS application database with URL: {printable_url}"
         )
@@ -92,7 +93,7 @@ class ApplicationDatabase(ABC):
     @abstractmethod
     def _create_engine(
         self, database_url: str, engine_kwargs: Dict[str, Any]
-    ) -> sa.Engine:
+    ) -> Engine:
         """Create a database engine specific to the database type."""
         pass
 
@@ -225,9 +226,9 @@ class PostgresApplicationDatabase(ApplicationDatabase):
 
     def _create_engine(
         self, database_url: str, engine_kwargs: Dict[str, Any]
-    ) -> sa.Engine:
+    ) -> Engine:
         """Create a PostgreSQL engine."""
-        app_db_url = sa.make_url(database_url).set(drivername="postgresql+psycopg")
+        app_db_url = make_url(database_url).set(drivername="postgresql+psycopg2")
 
         if engine_kwargs is None:
             engine_kwargs = {}
@@ -249,7 +250,7 @@ class PostgresApplicationDatabase(ApplicationDatabase):
                 conn.execution_options(isolation_level="AUTOCOMMIT")
                 if not conn.execute(
                     sa.text("SELECT 1 FROM pg_database WHERE datname=:db_name"),
-                    parameters={"db_name": app_db_url.database},
+                    {"db_name": app_db_url.database},
                 ).scalar():
                     conn.execute(sa.text(f"CREATE DATABASE {app_db_url.database}"))
         except Exception:
@@ -266,7 +267,7 @@ class PostgresApplicationDatabase(ApplicationDatabase):
                 sa.text(
                     "SELECT 1 FROM information_schema.schemata WHERE schema_name = :schema_name"
                 ),
-                parameters={"schema_name": self.schema},
+                {"schema_name": self.schema},
             ).scalar()
 
             if not schema_exists:
@@ -304,8 +305,8 @@ class PostgresApplicationDatabase(ApplicationDatabase):
         driver_error = dbapi_error.orig
         return (
             driver_error is not None
-            and isinstance(driver_error, psycopg.OperationalError)
-            and driver_error.sqlstate in ("40001", "40P01")
+            and isinstance(driver_error, psycopg2.OperationalError)
+            and getattr(driver_error, "pgcode", None) in ("40001", "40P01")
         )
 
 
@@ -314,7 +315,7 @@ class SQLiteApplicationDatabase(ApplicationDatabase):
 
     def _create_engine(
         self, database_url: str, engine_kwargs: Dict[str, Any]
-    ) -> sa.Engine:
+    ) -> Engine:
         """Create a SQLite engine."""
         # TODO: Make the schema dynamic so this isn't needed
         ApplicationSchema.transaction_outputs.schema = None
